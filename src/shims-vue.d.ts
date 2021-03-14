@@ -4,4 +4,7 @@ declare module 'vue/types/vue' {
   interface Vue {
     $breadcrumbs: RouteRecord[]
   }
+  interface Component {
+    $breadcrumbs: RouteRecord[]
+  }
 }

@@ -1,4 +1,4 @@
-import { ComponentOptions, PluginObject, VueConstructor, VNode } from 'vue'
+import { defineComponent, h, Plugin, App, VNode } from 'vue'
 
 import { RouteRecord } from 'vue-router';
 
@@ -10,19 +10,19 @@ type Breadcrumbs = {
   parent: string
 }
 
-class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
-  public install(Vue: VueConstructor<Vue>, options: Dictionary<any> = {}) {
+const VueBreadcrumbs: Plugin = {
+  install(Vue: App, options: Dictionary<any> = {}) {
 
     if (options.template) {
       options.render = undefined;
     }
 
 
-    Object.defineProperties(Vue.prototype, {
+    Object.defineProperties(Vue.config.globalProperties, {
       $breadcrumbs: {
         get(): RouteRecord[] {
-          function findParents(this: Vue, routeName: string, matches: RouteRecord[] = []): RouteRecord[] {
-            const routeParents: RouteRecord[] = this.$router.resolve({ name: routeName }).route.matched;
+          function findParents(this: App, routeName: string, matches: RouteRecord[] = []): RouteRecord[] {
+            const routeParents: RouteRecord[] = this.config.globalProperties.$router.resolve({ name: routeName }).route.matched;
             const routeParentLast: RouteRecord | undefined = routeParents.pop();
 
             if (routeParentLast) {
@@ -31,11 +31,24 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
               let breadcrumb = routeParentLast.meta?.breadcrumb;
 
               if (typeof breadcrumb === 'function') {
-                breadcrumb = breadcrumb.call(this, this.$route.params);
+                breadcrumb = breadcrumb.call(
+                  this,
+                  this.config.globalProperties.$route.params
+                );
               }
 
-              if (breadcrumb?.parent) {
-                return findParents.call(this, breadcrumb.parent, matches);
+              if (
+                typeof breadcrumb === "object" &&
+                !!breadcrumb &&
+                "parent" in breadcrumb &&
+                !!(breadcrumb as { parent: string }).parent &&
+                typeof (breadcrumb as { parent: string }).parent === "string"
+              ) {
+                return findParents.call(
+                  this,
+                  (breadcrumb as { parent: string }).parent,
+                  matches
+                );
               }
             }
             return routeParents.concat(matches);
@@ -50,9 +63,19 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
                 breadcrumb = breadcrumb.call(this, this.$route.params);
               }
 
-              if (breadcrumb?.parent) {
-                const matched = findParents.call(this, breadcrumb.parent, []);
-                routeRecord = [...matched, ...routeRecord];
+              if (
+                typeof breadcrumb === "object" &&
+                !!breadcrumb &&
+                "parent" in breadcrumb &&
+                !!(breadcrumb as { parent: string }).parent &&
+                typeof (breadcrumb as { parent: string }).parent === "string"
+              ) {
+                const matched = findParents.call(
+                  this,
+                  (breadcrumb as { parent: string }).parent,
+                  []
+                );
+                routeRecord = matched.slice().concat(routeRecord.slice());
               }
 
               return routeRecord
@@ -65,7 +88,7 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
       }
     });
 
-    Vue.component('Breadcrumbs', Vue.extend({
+    Vue.component('Breadcrumbs', defineComponent({
       methods: {
         getBreadcrumb(bc: string | CallbackFunction | Breadcrumbs): string {
           let name = bc;
@@ -83,16 +106,18 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
         getPath(crumb: RouteRecord): string {
           let { path } = crumb;
 
-          for (const [key, value] of Object.entries(this.$route.params)) {
-            path = path.replace(`:${key}`, value);
+          for (const [key, value] of Object.entries(
+            this.$route.params
+          )) {
+            path = path.replace(`:${key}`, value as string);
           }
 
           return path;
         }
       },
-      render(createElement): VNode {
+      render(): VNode {
         if (this.$breadcrumbs.length) {
-          return createElement(
+          return h(
             'ol',
             {
               class: {
@@ -103,7 +128,7 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
               if (crumb?.meta?.breadcrumb) {
                 const label = this.getBreadcrumb(crumb.meta.breadcrumb);
                 if (label?.length > 0) {
-                  return createElement(
+                  return h(
                     'li',
                     {
                       class: {
@@ -114,7 +139,7 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
                       }
                     },
                     [
-                      createElement(
+                      h(
                         'router-link',
                         {
                           props: {
@@ -129,21 +154,27 @@ class VueBreadcrumbs implements PluginObject<ComponentOptions<Vue>> {
                 }
               }
 
-              return createElement();
+              return h('span');
             })
           )
         }
 
-        return createElement();
+        return h('span');
       },
       ...options
     }))
   }
 }
 
-export default new VueBreadcrumbs();
+export default VueBreadcrumbs;
+
+declare global {
+  interface Window {
+    Vue: App | undefined;
+  }
+}
 
 // Automatic installation if Vue has been added to the global scope.
 if (typeof window !== 'undefined' && window.Vue) {
-  window.Vue.use(new VueBreadcrumbs())
+  window.Vue.use(VueBreadcrumbs)
 }
